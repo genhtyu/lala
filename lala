@@ -1,0 +1,59 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def plot_pools_with_pd(NM_probs, model_pd, true_pd, pools_names=None):
+    """
+    Визуализация:
+      - голубые бары = доли (part, check_good)
+      - красная линия = модельные PD
+      - синяя линия = реальные PD
+    Все ряды выравниваются по одному порядку (как у баров).
+    """
+
+    if pools_names is None:
+        pools_names = ['M','L','K','J','I','H','G','F','E','D','C','B','A']
+
+    order = pools_names[::-1]  # порядок для баров (от M до A вниз)
+
+    def align_to_order(arr_or_series, order, base_order=pools_names):
+        if isinstance(arr_or_series, pd.Series):
+            return arr_or_series.reindex(order).to_numpy()
+        else:
+            arr = np.asarray(arr_or_series)
+            if len(arr) != len(base_order):
+                raise ValueError("Длина массива не совпадает с количеством пулов")
+            # считаем, что массив дан в порядке base_order
+            return arr[::-1] if base_order != order else arr
+
+    # выравниваем все три ряда
+    NM_probs_aligned = align_to_order(NM_probs, order)
+    model_pd_aligned = align_to_order(model_pd, order)
+    true_pd_aligned  = align_to_order(true_pd, order)
+
+    x = np.arange(len(order))
+
+    plt.figure(figsize=(13,8))
+
+    # бары (голубые)
+    plt.bar(order, NM_probs_aligned, color='powderblue', label='part')
+    for xi, val in zip(x, NM_probs_aligned):
+        plt.annotate(f"{round(val,1)}", (order[xi], val), ha='center', va='bottom')
+
+    # красная линия (модельные PD)
+    plt.plot(order, model_pd_aligned, color='red', marker='o', label='Model_PD')
+    for xi, val in zip(x, model_pd_aligned):
+        plt.annotate(f"{round(val,1)}", (order[xi], val), ha='center', va='bottom')
+
+    # синяя линия (реальные PD)
+    plt.plot(order, true_pd_aligned, color='blue', marker='o', label='True_PD')
+    for xi, val in zip(x, true_pd_aligned):
+        plt.annotate(f"{round(val,1)}", (order[xi], val), ha='center', va='bottom')
+
+    plt.legend(loc='upper left', shadow=True, fontsize='x-large')
+    plt.grid(visible=True, which='both', linewidth=0.2)
+    plt.xlabel("Пулы")
+    plt.ylabel("Значения")
+    plt.title("Сравнение: доли vs. Model_PD vs. True_PD")
+
+    plt.show()
