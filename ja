@@ -1,0 +1,141 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_feature_distribution_bars(data, feature, set_column='type', 
+                                  bins=None, bin_edges=None, 
+                                  old_label='Выборка 1', new_label='Выборка 2'):
+    """
+    Строит bar chart распределения фичи для old и new выборок
+    
+    Parameters:
+    data: DataFrame с данными
+    feature: название фичи для анализа
+    set_column: колонка с типом выборки
+    bins: количество бинов (если None, автоматически)
+    bin_edges: границы бинов вручную [start, end, step]
+    old_label: подпись для old выборки
+    new_label: подпись для new выборки
+    """
+    
+    # Фильтруем данные
+    df_old = data[data[set_column] == 'old'][feature].dropna()
+    df_new = data[data[set_column] == 'new'][feature].dropna()
+    
+    # Определяем границы бинов
+    if bin_edges is not None:
+        # Ручные границы [start, end, step]
+        bins_custom = np.arange(bin_edges[0], bin_edges[1] + bin_edges[2], bin_edges[2])
+    elif bins is not None:
+        # Автоматические бины с указанным количеством
+        bins_custom = bins
+    else:
+        # Автоматическое определение
+        bins_custom = 'auto'
+    
+    # Считаем распределения
+    counts_old, bin_edges_old = np.histogram(df_old, bins=bins_custom, density=False)
+    counts_new, bin_edges_new = np.histogram(df_new, bins=bins_custom, density=False)
+    
+    # Преобразуем в проценты
+    total_old = len(df_old)
+    total_new = len(df_new)
+    
+    percent_old = (counts_old / total_old) * 100
+    percent_new = (counts_new / total_new) * 100
+    
+    # Создаем подписи для бинов
+    bin_labels = []
+    for i in range(len(bin_edges_old) - 1):
+        label = f'{bin_edges_old[i]:.0f}-{bin_edges_old[i+1]:.0f}'
+        bin_labels.append(label)
+    
+    # Построение графика
+    plt.figure(figsize=(12, 8))
+    
+    x = np.arange(len(bin_labels))
+    width = 0.35
+    
+    bars_old = plt.bar(x - width/2, percent_old, width, 
+                      label=old_label, alpha=0.8, color='blue')
+    bars_new = plt.bar(x + width/2, percent_new, width, 
+                      label=new_label, alpha=0.8, color='red')
+    
+    plt.xlabel(f'Значения фичи: {feature}')
+    plt.ylabel('Доля наблюдений (%)')
+    plt.title(f'Распределение фичи "{feature}" по выборкам')
+    plt.xticks(x, bin_labels, rotation=45, ha='right')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Добавляем значения на столбцы
+    for i, (old_val, new_val) in enumerate(zip(percent_old, percent_new)):
+        if old_val > 1:  # Добавляем только если значение > 1%
+            plt.text(i - width/2, old_val + 0.5, f'{old_val:.1f}%', 
+                    ha='center', va='bottom', fontsize=8)
+        if new_val > 1:
+            plt.text(i + width/2, new_val + 0.5, f'{new_val:.1f}%', 
+                    ha='center', va='bottom', fontsize=8)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Возвращаем данные для анализа
+    result_df = pd.DataFrame({
+        'bin_range': bin_labels,
+        f'{old_label}_count': counts_old,
+        f'{new_label}_count': counts_new,
+        f'{old_label}_percent': percent_old,
+        f'{new_label}_percent': percent_new
+    })
+    
+    return result_df
+
+# Альтернативная версия для категориальных фич
+def plot_categorical_distribution(data, feature, set_column='type', 
+                                 top_n=10, old_label='Выборка 1', new_label='Выборка 2'):
+    """
+    Для категориальных фич - топ-N значений
+    """
+    # Получаем топ-N значений
+    top_values = data[feature].value_counts().head(top_n).index
+    
+    df_old = data[data[set_column] == 'old']
+    df_new = data[data[set_column] == 'new']
+    
+    percent_data = []
+    
+    for value in top_values:
+        # Доли для каждого значения
+        pct_old = (df_old[feature] == value).mean() * 100
+        pct_new = (df_new[feature] == value).mean() * 100
+        
+        percent_data.append({
+            'value': value,
+            f'{old_label}_pct': pct_old,
+            f'{new_label}_pct': pct_new
+        })
+    
+    df_percent = pd.DataFrame(percent_data)
+    
+    # Построение графика
+    plt.figure(figsize=(12, 8))
+    
+    x = np.arange(len(top_values))
+    width = 0.35
+    
+    plt.bar(x - width/2, df_percent[f'{old_label}_pct'], width, 
+            label=old_label, alpha=0.8, color='blue')
+    plt.bar(x + width/2, df_percent[f'{new_label}_pct'], width, 
+            label=new_label, alpha=0.8, color='red')
+    
+    plt.xlabel(f'Значения фичи: {feature}')
+    plt.ylabel('Доля наблюдений (%)')
+    plt.title(f'Распределение категориальной фичи "{feature}"')
+    plt.xticks(x, top_values, rotation=45, ha='right')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    
+    return df_percent
