@@ -1,0 +1,212 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+
+def plot_roc_suc_total(data,  
+                      feature,  
+                      set_column='type',  
+                      date_column='APP_DATE',  
+                      def_column='DEFAMY90'):
+    """
+    Функция для построения ROC кривых и расчета GINI по годам
+    для old и new выборок по выбранной фиче
+    
+    Parameters:
+    data: DataFrame с данными
+    feature: название фичи для анализа
+    set_column: колонка с типом выборки ('old', 'new')
+    date_column: колонка с датой
+    def_column: колонка с целевой переменной
+    
+    Returns:
+    db_gini_by_year: DataFrame с результатами по годам
+    db_gini_total_old: DataFrame с результатами для old выборки
+    db_gini_total_new: DataFrame с результатами для new выборки
+    """
+    
+    results_by_year = []
+    results_total = []
+
+    # Копируем данные чтобы избежать предупреждений
+    df = data[data[feature].notna()].copy()
+    
+    # Преобразование даты
+    df[date_column] = pd.to_datetime(df[date_column])
+    df.sort_values(by=date_column, inplace=True)  
+    df['year'] = df[date_column].dt.year  
+    
+    # Удаление пропусков в целевой переменной
+    df = df[df[def_column].notna()].copy()
+    df[def_column] = df[def_column].astype(int)  
+    
+    year_list = sorted(df['year'].unique().tolist())
+    
+    # Расчет по годам
+    for year in year_list:  
+        df_year = df[df['year'] == year]  
+        
+        X = df_year[[feature]]  
+        y = df_year[def_column]  
+        
+        if y.nunique() == 1:  
+            print(f'Только 1 класс для года {year} - пропускаем')  
+            continue
+            
+        try:
+            model = LogisticRegression()  
+            model.fit(X, y)  
+            y_pred_proba = model.predict_proba(X)[:, 1]  
+            
+            # Расчет ROC AUC и GINI
+            roc_auc = roc_auc_score(y, y_pred_proba)
+            gini = 2 * roc_auc - 1
+            
+            # ROC кривая
+            fpr, tpr, _ = roc_curve(y, y_pred_proba)
+            
+            results_by_year.append({
+                'year': year,
+                'feature': feature,
+                'roc_auc': roc_auc,
+                'gini': gini,
+                'fpr': fpr,
+                'tpr': tpr
+            })
+            
+        except Exception as e:
+            print(f'Ошибка для года {year}: {e}')
+            continue
+    
+    # Расчет по типам выборок (old/new)
+    set_types = df[set_column].unique().tolist()
+    
+    for set_type in set_types:
+        df_upd = df[df[set_column] == set_type]
+        
+        # Проверка, что в выборке есть оба класса
+        if df_upd[def_column].nunique() < 2:
+            print(f"Пропускаем {set_type}: только один класс в целевой переменной")
+            continue
+        
+        X_def_90 = df_upd[[feature]]
+        y_def_90 = df_upd[def_column]
+        
+        try:
+            model_def_90 = LogisticRegression()
+            model_def_90.fit(X_def_90, y_def_90)
+            y_pred_proba_def_90 = model_def_90.predict_proba(X_def_90)[:, 1]
+            
+            roc_auc_def_90 = roc_auc_score(y_def_90, y_pred_proba_def_90)
+            gini_def_90 = 2 * roc_auc_def_90 - 1
+            
+            fpr_def_90, tpr_def_90, _ = roc_curve(y_def_90, y_pred_proba_def_90)
+            
+            results_total.append({
+                'set_type': set_type,
+                'feature': feature,
+                'roc_auc': roc_auc_def_90,
+                'gini': gini_def_90,
+                'fpr_def_90': fpr_def_90,
+                'tpr_def_90': tpr_def_90
+            })
+            
+        except Exception as e:
+            print(f"Ошибка для {set_type}: {e}")
+            continue
+
+    # Построение графиков
+    if results_by_year:
+        db_gini_by_year = pd.DataFrame(results_by_year)
+        
+        # График GINI по годам
+        plt.figure(figsize=(12, 5))
+        
+        plt.subplot(1, 2, 1)
+        plt.plot(db_gini_by_year['year'], db_gini_by_year['gini'], 'bo-', linewidth=2)
+        plt.xlabel('Год')
+        plt.ylabel('GINI')
+        plt.title(f'GINI по годам для {feature}')
+        plt.grid(True)
+        plt.xticks(db_gini_by_year['year'])
+        
+        plt.subplot(1, 2, 2)
+        plt.plot(db_gini_by_year['year'], db_gini_by_year['roc_auc'], 'ro-', linewidth=2)
+        plt.xlabel('Год')
+        plt.ylabel('ROC AUC')
+        plt.title(f'ROC AUC по годам для {feature}')
+        plt.grid(True)
+        plt.xticks(db_gini_by_year['year'])
+        
+        plt.tight_layout()
+        plt.show()
+    else:
+        db_gini_by_year = pd.DataFrame()
+        print("Нет данных для построения графиков по годам")
+
+    # Построение ROC кривых для old/new
+    if results_total:
+        db_gini_total = pd.DataFrame(results_total)
+        
+        plt.figure(figsize=(15, 5))
+        
+        # График для old выборки
+        plt.subplot(1, 2, 1)
+        if 'old' in db_gini_total['set_type'].values:
+            old_data = db_gini_total[db_gini_total['set_type'] == 'old'].iloc[0]
+            roc_auc_old = old_data['roc_auc']
+            gini_old = old_data['gini']
+            fpr_old = old_data['fpr_def_90']
+            tpr_old = old_data['tpr_def_90']
+            
+            plt.plot(fpr_old, tpr_old, color='blue', lw=2, 
+                    label=f'ROC кривая (AUC = {roc_auc_old:.2f}, GINI = {gini_old:.2f})')
+            plt.plot([0, 1], [0, 1], color='red', linestyle='--')
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(f'ROC кривая для OLD данных ({feature})')
+            plt.legend(loc='lower right')
+            plt.grid(True)
+        
+        # График для new выборки
+        plt.subplot(1, 2, 2)
+        if 'new' in db_gini_total['set_type'].values:
+            new_data = db_gini_total[db_gini_total['set_type'] == 'new'].iloc[0]
+            roc_auc_new = new_data['roc_auc']
+            gini_new = new_data['gini']
+            fpr_new = new_data['fpr_def_90']
+            tpr_new = new_data['tpr_def_90']
+            
+            plt.plot(fpr_new, tpr_new, color='green', lw=2, 
+                    label=f'ROC кривая (AUC = {roc_auc_new:.2f}, GINI = {gini_new:.2f})')
+            plt.plot([0, 1], [0, 1], color='red', linestyle='--')
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title(f'ROC кривая для NEW данных ({feature})')
+            plt.legend(loc='lower right')
+            plt.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # Разделение на old и new
+        if 'old' in db_gini_total['set_type'].values:
+            db_gini_total_old = db_gini_total[db_gini_total['set_type'] == 'old']
+        else:
+            db_gini_total_old = pd.DataFrame()
+        
+        if 'new' in db_gini_total['set_type'].values:
+            db_gini_total_new = db_gini_total[db_gini_total['set_type'] == 'new']
+        else:
+            db_gini_total_new = pd.DataFrame()
+
+    else:
+        print("Нет результатов для построения ROC кривых")
+        db_gini_total_old = pd.DataFrame()
+        db_gini_total_new = pd.DataFrame()
+
+    return db_gini_by_year, db_gini_total_old, db_gini_total_new
+
+# Пример использования
+# results_by_year, old_results, new_results = plot_roc_suc_total(data, 'your_feature_name')
