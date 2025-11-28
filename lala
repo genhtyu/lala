@@ -1,0 +1,23 @@
+def split_last_bucket_into_5(bucket_df, last_bucket=10):
+    df = bucket_df.copy()
+
+    # вытаскиваем последний бакет
+    last = df[df['bucket'] == last_bucket].iloc[0]
+    L, R = last['left'], last['right']
+    step = (R - L) / 5
+
+    # убираем исходный 10 бакет
+    df = df[df['bucket'] != last_bucket]
+
+    # создаём 5 новых
+    new_rows = []
+    for i in range(5):
+        new_rows.append({
+            'bucket': float(f"{last_bucket}.{i+1}"),
+            'left': L + i * step,
+            'right': R if i == 4 else L + (i + 1) * step
+        })
+
+    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+
+    return df.sort_values('left').reset_index(drop=True)
